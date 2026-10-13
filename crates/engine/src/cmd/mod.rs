@@ -13,6 +13,7 @@ pub mod formulas;
 pub mod insert;
 pub mod inspect;
 pub mod pivot;
+pub mod plugins;
 pub mod print;
 pub mod review;
 pub mod sheet;
@@ -144,6 +145,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(forecast::specs());
         v.extend(analysis::specs());
         v.extend(print::specs());
+        v.extend(plugins::specs());
         v
     })
 }

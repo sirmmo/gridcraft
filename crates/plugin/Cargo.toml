@@ -1,0 +1,26 @@
+[package]
+name = "gridcraft-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GridCraft plugin host: out-of-process plugins over JSON-RPC (custom functions and commands)"
+
+[lints]
+workspace = true
+
+[dependencies]
+gridcraft-core = { workspace = true }
+gridcraft-calc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# A reference plugin written in Rust; the tests drive it as a real child process.
+[[bin]]
+name = "gridcraft-example-plugin"
+path = "src/bin/example_plugin.rs"
+test = false
+doc = false
+
+[dev-dependencies]
+gridcraft-model = { workspace = true }

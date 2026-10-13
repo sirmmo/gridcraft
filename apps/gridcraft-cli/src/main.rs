@@ -13,6 +13,8 @@
 //! gridcraft-cli send <port> <method> [json]
 //! gridcraft-cli version | --version
 //! ```
+//!
+//! Any subcommand takes `--plugin DIR` (repeatable) to load plugins; so does `GRIDCRAFT_PLUGIN_PATH`.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
@@ -47,7 +49,9 @@ const USAGE: &str = "usage:
   gridcraft-cli functions [--json] [--search X] [--category C]
   gridcraft-cli mcp [--connect PORT] [--in FILE | --sample NAME]
   gridcraft-cli send <port> <method> [json]
-  gridcraft-cli version";
+  gridcraft-cli version
+
+Any subcommand: --plugin DIR (repeatable) loads the plugin(s) in DIR; GRIDCRAFT_PLUGIN_PATH too.";
 
 /// stdout went away. A reader that stopped early (a closed pipe) ends the program quietly; any
 /// other write error is reported.
@@ -61,6 +65,19 @@ fn stdout_failed(e: std::io::Error) -> ! {
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let (args, plugin_dirs) = match take_plugins(args) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("gridcraft-cli: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // Plugins named with --plugin, then those in GRIDCRAFT_PLUGIN_PATH. Each starts on first use.
+    for (dir, r) in gridcraft_engine::plugin::autoload(&plugin_dirs) {
+        if let Err(e) = r {
+            eprintln!("gridcraft-cli: plugin {}: {e}", dir.display());
+        }
+    }
     let rest = args.get(1..).unwrap_or_default();
     let r = match args.first().map(String::as_str) {
         Some("--version" | "-V" | "version") => {
@@ -94,6 +111,28 @@ fn main() -> ExitCode {
 }
 
 // ---------------------------------------------------------------- argument parsing
+
+/// Removes the global `--plugin DIR` options (any number, anywhere): the folders to load.
+fn take_plugins(args: Vec<String>) -> Result<(Vec<String>, Vec<std::path::PathBuf>), String> {
+    let (mut rest, mut dirs): (Vec<String>, Vec<std::path::PathBuf>) = (Vec::new(), Vec::new());
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--plugin" {
+            let dir = it.next().ok_or("--plugin needs a folder")?;
+            dirs.push(dir.into());
+        } else if let Some(dir) = a.strip_prefix("--plugin=") {
+            dirs.push(dir.into());
+        } else {
+            rest.push(a);
+        }
+    }
+    for d in &dirs {
+        if !d.exists() {
+            return Err(format!("--plugin {}: no such folder", d.display()));
+        }
+    }
+    Ok((rest, dirs))
+}
 
 /// Parsed arguments: positionals, `--flag value` options and boolean `--switch`es.
 struct Args {

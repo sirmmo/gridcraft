@@ -1,6 +1,6 @@
 # Roadmap detail
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (PivotTable calculated fields) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (plugin host landed, gap #21) · **Target:** Microsoft Excel (Microsoft 365)
 
 Forward-looking plan. The one-page summary is [`ROADMAP.md`](../ROADMAP.md); the ranked work
 list is [`gaps.md`](gaps.md); numbers and method are in
@@ -94,7 +94,7 @@ to check our files, and Windows machines with the reported GPU drivers.
 | Page Layout view, print polish | #14 | 12–20 |
 | Mobile layout | #23 | 30–60 |
 | AI features with local models | #22 | 30–50 |
-| Plugin / custom-function API | #21 | 25–40 |
+| Live data and streams for plugins | #21 | 15–25 |
 
 ## Measuring
 
@@ -112,6 +112,7 @@ to check our files, and Windows machines with the reported GPU drivers.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Plugin host landed; #21 narrowed to live data and streams |
 | 2026-10-11 | minor | PivotTable calculated fields landed |
 | 2026-10-10 | minor | Current focus and M15 updated for the 10-10 merges |
 | 2026-10-10 | minor | Added the alpha gate table (six core workflows; passes, stays alpha) |

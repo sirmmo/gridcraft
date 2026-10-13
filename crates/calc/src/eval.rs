@@ -751,6 +751,10 @@ impl<'h> Evaluator<'h> {
             if let Ev::L(l) = self.name(name) {
                 return self.apply_lambda(&l, args);
             }
+            // A function a plugin provides.
+            if let Some(f) = crate::external::get(name) {
+                return self.external(f.as_ref(), args);
+            }
             return err(CellError::Name);
         };
         if args.len() < spec.min_args || args.len() > spec.max_args {
@@ -793,6 +797,36 @@ impl<'h> Evaluator<'h> {
         }
         let mut ctx = FnCtx { ev: self };
         gridcraft_functions::call(spec, &evaluated, &mut ctx).pipe(Ev::V)
+    }
+
+    /// Calls a plugin's function with its arguments evaluated to values (a reference becomes the
+    /// array of its values).
+    fn external(&mut self, f: &dyn crate::external::ExternalFunction, args: &[Expr]) -> Ev {
+        if args.len() < f.min_args() || args.len() > f.max_args().min(255) {
+            return err(CellError::Value);
+        }
+        if f.volatile() {
+            self.host.note_volatile();
+        }
+        let mut values = Vec::with_capacity(args.len());
+        for a in args {
+            let v = match self.eval(a) {
+                Ev::R(areas) if areas.len() > 1 => {
+                    let mut vals = Vec::new();
+                    for ar in &areas {
+                        match self.area_value(ar) {
+                            Value::Array(a) => vals.extend(a.data.iter().cloned()),
+                            v => vals.push(v),
+                        }
+                    }
+                    Value::from(Array::row(vals))
+                }
+                Ev::L(_) => Value::Error(CellError::Value),
+                ev => self.deref(ev),
+            };
+            values.push(v);
+        }
+        Ev::V(f.call(&values))
     }
 
     /// Performs aggregation operations without copying its ranges: blocks are folded over the stored
@@ -1664,7 +1698,10 @@ pub fn precedents(wb: &Workbook, sheet: usize, e: &Expr) -> (Vec<Area>, bool) {
             dynamic = true
         }
         Expr::Name(_) | Expr::Struct(_) => dynamic = true,
-        Expr::Call(n, _) if gridcraft_functions::lookup(n).is_none() && !is_special(n) => dynamic = true,
+        // Unknown names (a plugin may provide them later) and volatile plugin functions.
+        Expr::Call(n, _) if gridcraft_functions::lookup(n).is_none() && !is_special(n) && crate::external::get(n).is_none_or(|f| f.volatile()) => {
+            dynamic = true
+        }
         // A range ending in a function's result (`A1:INDEX(B1:B9,n)`) covers the cells between
         // the references inside it, not only those references.
         Expr::Binary(BinOp::Range, a, b) if !matches!((&**a, &**b), (Expr::Ref(_), Expr::Ref(_))) => {
@@ -1760,7 +1797,7 @@ pub const SPECIAL_FUNCTIONS: &[&str] = &[
 ];
 
 pub fn is_known_function(n: &str) -> bool {
-    is_special(&n.to_ascii_uppercase()) || gridcraft_functions::lookup(n).is_some()
+    is_special(&n.to_ascii_uppercase()) || gridcraft_functions::lookup(n).is_some() || crate::external::get(n).is_some()
 }
 
 #[allow(dead_code)]

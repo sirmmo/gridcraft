@@ -175,6 +175,8 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     ui.add_space(8.0);
                     file_menu(app, ui);
                     let mut tabs: Vec<&str> = TABS.to_vec();
+                    let plugin_tabs = crate::plugin_ui::extra_tabs();
+                    tabs.extend(plugin_tabs.iter().map(String::as_str));
                     let ctx_tabs = contextual_tabs(app);
                     tabs.extend(ctx_tabs.iter());
                     for tab in tabs {
@@ -230,7 +232,8 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
-                        match app.ui.ribbon_tab.as_str() {
+                        let tab = app.ui.ribbon_tab.clone();
+                        match tab.as_str() {
                             "Home" => home(app, ui),
                             "Insert" => insert(app, ui),
                             "Draw" => draw(app, ui),
@@ -243,8 +246,12 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                             "Table Design" => table_design(app, ui),
                             "Chart Design" => chart_design(app, ui),
                             crate::paper_view::TAB => crate::paper_view::ribbon_tab(app, ui),
+                            // A tab a plugin added (or one whose plugin was just unloaded).
+                            other if !crate::plugin_ui::groups(other).is_empty() => {}
                             _ => home(app, ui),
                         }
+                        // Plugin groups: at the end of a built-in tab, or the whole of a plugin's own tab.
+                        crate::plugin_ui::ribbon_groups(app, ui, &tab, TABS.contains(&tab.as_str()));
                     });
                 });
             });
@@ -292,7 +299,7 @@ fn contextual_tabs(app: &SheetApp) -> Vec<&'static str> {
     v
 }
 
-fn sep(ui: &mut Ui) {
+pub(crate) fn sep(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(13.0, 72.0), Sense::hover());
     ui.painter().line_segment([pos2(r.center().x, r.top() + 6.0), pos2(r.center().x, r.bottom() - 6.0)], Stroke::new(1.0, t.separator));
@@ -2227,6 +2234,9 @@ fn view(app: &mut SheetApp, ui: &mut Ui) {
 fn automate(app: &mut SheetApp, ui: &mut Ui) {
     if big_button(ui, Icon::Script, "Macros", "Macros and scripts in this workbook (Alt+F8)", false).clicked() {
         app.open_dialog("macros", json!({}));
+    }
+    if big_button(ui, Icon::Script, "Add-ins", "Plugins: their functions and commands", false).clicked() {
+        app.open_dialog("addIns", json!({}));
     }
     let __k = big_button(ui, Icon::Script, "Command\nPalette", "Search and run any command", false);
     control_keytip(app, ui, &__k, "commandSearch");

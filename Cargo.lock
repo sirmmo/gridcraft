@@ -1554,6 +1554,7 @@ dependencies = [
  "gridcraft-model",
  "gridcraft-numfmt",
  "gridcraft-pdf",
+ "gridcraft-plugin",
  "gridcraft-xlsx",
  "image",
  "log",
@@ -1611,6 +1612,18 @@ dependencies = [
 [[package]]
 name = "gridcraft-pdf"
 version = "0.5.0"
+
+[[package]]
+name = "gridcraft-plugin"
+version = "0.5.0"
+dependencies = [
+ "gridcraft-calc",
+ "gridcraft-core",
+ "gridcraft-model",
+ "log",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "gridcraft-ui-egui"

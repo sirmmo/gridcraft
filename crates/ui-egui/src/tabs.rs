@@ -171,6 +171,16 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                     if ui.button("Select All Sheets").clicked() {
                                         ui.close();
                                     }
+                                    let plugin_items = crate::plugin_ui::menu_items(gridcraft_engine::plugin::MenuKind::SheetTab);
+                                    if !plugin_items.is_empty() {
+                                        ui.separator();
+                                    }
+                                    for item in &plugin_items {
+                                        if ui.button(item.label.as_str()).on_hover_text(&item.tooltip).clicked() {
+                                            crate::plugin_ui::run(app, item, json!({"sheet": i}));
+                                            ui.close();
+                                        }
+                                    }
                                 });
                             }
                         });

@@ -728,6 +728,11 @@ impl Dialog {
                 )
             }
             "journal" => Dialog::custom("journal", "Action Journal", json!({})),
+            "addIns" => {
+                let mut d = Dialog::custom("addIns", "Add-ins", json!({"path": ""}));
+                d.result = app.session.run("plugins.list", json!({})).ok();
+                d
+            }
             "macros" => {
                 let mut d = Dialog::custom("macros", "Macros", json!({}));
                 d.result = app.session.run("view.macros", json!({})).ok();
@@ -885,7 +890,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
     let width = match d.name.as_str() {
         "formatCells" => 560.0,
         "about" => 660.0,
-        "insertFunction" | "commandSearch" | "nameManager" | "manageRules" | "journal" | "agents" | "macros" => 520.0,
+        "insertFunction" | "commandSearch" | "nameManager" | "manageRules" | "journal" | "agents" | "macros" | "addIns" => 520.0,
         "recommendedCharts" => 600.0,
         "analysisToolPak" => 420.0,
         "solver" => 460.0,
@@ -933,6 +938,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     });
                 }
                 "macros" => macros(ui, &mut d),
+                "addIns" => add_ins(app, ui, &mut d),
                 "statistics" | "accessibility" | "errorChecking" | "evaluateFormula" | "comments" => {
                     let r = if d.name == "comments" {
                         app.session.active().and_then(|doc| doc.wb.active().map(|s| json!(s.comments.iter().map(|(c, m)| json!({"cell": c.a1(), "author": m.author, "text": m.text})).collect::<Vec<_>>())))
@@ -1359,6 +1365,71 @@ fn macros(ui: &mut egui::Ui, d: &mut Dialog) {
             });
         }
     });
+}
+
+/// Home › Add-ins: the loaded plugins, their functions and commands; load and unload.
+fn add_ins(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    ui.label("Plugins are programs that add functions and commands. Each runs in its own process.");
+    ui.add_space(6.0);
+    let plugins: Vec<Json> = d.result.as_ref().and_then(Json::as_array).cloned().unwrap_or_default();
+    let mut refresh = false;
+    if plugins.is_empty() {
+        ui.weak("No plugins are loaded. Put a plugin folder in the plugins folder of the settings, or load one below.");
+    }
+    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+        for p in &plugins {
+            let s = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or("").to_string();
+            let id = s("id");
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(s("name")).strong());
+                ui.weak(format!("{} · {}", s("version"), s("status")));
+                if ui.small_button("Unload").clicked() {
+                    app.run_or_alert("plugins.unload", json!({"id": id}));
+                    refresh = true;
+                }
+            });
+            if !s("description").is_empty() {
+                ui.label(s("description"));
+            }
+            for f in p.get("functions").and_then(Json::as_array).into_iter().flatten() {
+                let sig = f
+                    .get("signature")
+                    .and_then(Json::as_str)
+                    .filter(|x| !x.is_empty())
+                    .or_else(|| f.get("name").and_then(Json::as_str))
+                    .unwrap_or("");
+                ui.horizontal(|ui| {
+                    ui.monospace(sig);
+                    ui.weak(f.get("description").and_then(Json::as_str).unwrap_or(""));
+                });
+            }
+            for c in p.get("commands").and_then(Json::as_array).into_iter().flatten() {
+                let label = c.get("label").and_then(Json::as_str).unwrap_or("");
+                let cid = c.get("id").and_then(Json::as_str).unwrap_or("");
+                ui.horizontal(|ui| {
+                    if ui.button(label).on_hover_text(c.get("description").and_then(Json::as_str).unwrap_or("")).clicked() {
+                        app.run_or_alert("plugins.run", json!({"plugin": id, "command": cid}));
+                        refresh = true;
+                    }
+                });
+            }
+            ui.separator();
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label("Plugin folder:");
+        let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
+        if ui.text_edit_singleline(&mut path).changed() {
+            d.values.insert("path".into(), json!(path));
+        }
+        if ui.add_enabled(!path.trim().is_empty(), egui::Button::new("Load")).clicked() {
+            app.run_or_alert("plugins.load", json!({"path": path.trim()}));
+            refresh = true;
+        }
+    });
+    if refresh {
+        d.result = app.session.run("plugins.list", json!({})).ok();
+    }
 }
 
 fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool) {

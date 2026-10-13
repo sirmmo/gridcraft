@@ -34,6 +34,9 @@ cargo install --path apps/gridcraft-cli     # or: cargo run -p gridcraft-cli -- 
 | `send <port> <method> [json]` | `gridcraft-cli send 7979 engine.execute '{"command":"home.bold","params":{"range":"A1:C1"}}'` — one control-channel request to a running app (`gridcraft --control 7979`). |
 | `version` | Prints `gridcraft-cli <version>`. |
 
+Every subcommand takes `--plugin DIR` (repeatable) to load [plugins](plugins.md), as does
+`GRIDCRAFT_PLUGIN_PATH`: `gridcraft-cli --plugin ~/plugins/finance eval '=FIN.PRICE("ACME")'`.
+
 ## `run`
 
 ```sh

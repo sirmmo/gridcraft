@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod eval;
+pub mod external;
 pub mod recalc;
 mod trimrange;
 

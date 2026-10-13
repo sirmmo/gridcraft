@@ -1,6 +1,6 @@
 # Target-app parity: GridCraft vs Microsoft Excel
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (stability: command-sequence fuzzing against undo/redo, XLSX round-trip and full-recalc invariants) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (ecosystem 10% → 20%: plugin host) · **Target:** Microsoft Excel (Microsoft 365)
 
 This is the authoritative parity assessment. [`ROADMAP.md`](../ROADMAP.md) summarizes it,
 [`gaps.md`](gaps.md) lists every shortfall, and the area checklists hold the detail:
@@ -16,7 +16,7 @@ generated ribbon checklist is [`parity-checklist.md`](parity-checklist.md).
 | Ribbon and menu catalog | **274 / 290 (94.5%)** | measured: `cargo xtask parity` (`crates/engine/src/catalog.rs` ∩ registered command ids) |
 | Worksheet functions, by name | **513 / 523 (98.1%)** | measured: registered functions vs Microsoft's published function list (method below) |
 | Worksheet functions that do real work | **504 / 523 (96.4%)** | measured: excludes 9 stubs (7 CUBE functions, WEBSERVICE, FILTERXML) |
-| **Ready for real work** | **~50%** | estimated; written weights below (51.6 computed) |
+| **Ready for real work** | **~50%** | estimated; written weights below (51.8 computed) |
 | **Mainstream practitioner** | **~50%** | estimated; [method](#mainstream-practitioner) (69.5 depth × 0.90 × 0.92 × 0.88 = 50.6) |
 | **Essentials user** | **~63%** | estimated; [method](#essentials-user) (80.2 depth × 0.92 × 0.95 × 0.90 = 63.1) |
 | Stage | **alpha** | see [Stage](#stage) |
@@ -106,15 +106,16 @@ performance 8, stability 8, localization 4, hardware 2, platforms 2, ecosystem 2
 | Localization | 4 | ~10% | 100–165 | Ribbon-only catalog in five languages (ja, zh, ko, pt-BR, ru; ~12% of strings each), CJK/Thai/Hebrew font fallback, no shaping or RTL. [localization-parity.md](localization-parity.md) |
 | Hardware | 2 | ~40% | 25–40 | GPU UI via wgpu; single-threaded calc; no pen pressure; one window. [hardware-parity.md](hardware-parity.md) |
 | Platforms | 2 | ~80% | 30–60 | [Platforms](#platforms) |
-| Ecosystem / add-ins | 2 | ~10% | 25–40 | [Ecosystem and AI](#ecosystem-and-ai) |
+| Ecosystem / add-ins | 2 | ~20% | 15–25 | [Ecosystem and AI](#ecosystem-and-ai) |
 | AI features | 2 | ~15% | 30–50 | [Ecosystem and AI](#ecosystem-and-ai) |
-| **Ready for real work** | 100 | **~50%** (51.6 computed: 0.45 × 59.0 features + the other rows × their weights) | **~700–1,100** | |
+| **Ready for real work** | 100 | **~50%** (51.8 computed: 0.45 × 59.0 features + the other rows × their weights) | **~700–1,100** | |
 
 How the full number is built: features ready is the weighted mean of the area table (59.0 with
 charts at 30%); ready for real work is the weighted mean of this table with the weights written
 under [Weights](#weights). Re-checked after the 10-10 merges: charts were corrected from 38% to
 30% (round-trip loss, #190 chart resize) and localization rose from 5% to 10% (#31, #104, #82,
-#38). The two moves cancel: 51.6 before and after, so **~50%** stands.
+#38). The two moves cancel: 51.6 before and after, so **~50%** stands. On 10-13 the plugin host
+moved ecosystem from 10% to 20% (weight 2): 51.8, still **~50%**.
 
 ## Mainstream practitioner
 
@@ -229,8 +230,10 @@ Linux, BSD and RISC-V, where Excel doesn't run.
 
 - **Add-ins:** Excel has Office JavaScript add-ins, COM/XLL add-ins, VBA, Office Scripts and
   Power Automate. GridCraft has its own recorded scripts, plus a control channel, MCP server and
-  CLI that reach every command. VBA is out of scope (owner decision). A plugin or custom-function
-  API (for example LAMBDA libraries and WASM custom functions) is the open-equivalent path: 25–40 h.
+  CLI that reach every command. VBA is out of scope (owner decision). Plugins are the open
+  equivalent of add-ins: separate processes in any language, adding functions and commands
+  ([plugins.md](plugins.md)). Missing: live data sources and streams (`RTD`), asynchronous
+  functions, and plugins on the web: 15–25 h.
 - **AI:** Excel has Copilot, the COPILOT() function, Analyze Data, Python in Excel and Flash
   Fill. GridCraft has Flash Fill and best-in-class agent control (any MCP client can drive every
   command headless or live), but no in-app assistant, no natural-language formulas and no
@@ -332,6 +335,7 @@ The inventory carried over from the 2026-10-07 ROADMAP.md, updated for what land
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Ecosystem / add-ins 10% → 20% (plugin host: functions and commands); full number 51.6 → 51.8, still ~50% |
 | 2026-10-11 | minor | Stability: command-sequence fuzz harness (`crates/engine/tests/command_sequence_fuzz.rs`) checks random command sequences against undo/redo, XLSX round-trip, full-recalc and structure invariants; the sequence bugs it found are fixed (no score change) |
 | 2026-10-11 | minor | Password-encrypted workbooks open (#11): Essentials file-opening work 24–36 h |
 | 2026-10-11 | minor | Worksheet functions 505 / 523 (96.6%; 496 working): ODDFPRICE, ODDFYIELD, ODDLPRICE, ODDLYIELD |

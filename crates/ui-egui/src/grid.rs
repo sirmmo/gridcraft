@@ -2655,6 +2655,7 @@ fn context_menu(app: &mut SheetApp, ui: &mut egui::Ui) {
                     }
                 }
             }
+            plugin_menu_items(app, ui, &mut close, gridcraft_engine::plugin::MenuKind::Cell, 190.0);
         });
     });
     if close
@@ -2834,6 +2835,20 @@ fn list_picker(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_open: bool)
     }
 }
 
+/// The items plugins add to a right-click menu, after a separator.
+fn plugin_menu_items(app: &mut SheetApp, ui: &mut egui::Ui, close: &mut bool, kind: gridcraft_engine::plugin::MenuKind, width: f32) {
+    let items = crate::plugin_ui::menu_items(kind);
+    if !items.is_empty() {
+        ui.separator();
+    }
+    for item in &items {
+        if ui.add(egui::Button::new(item.label.as_str()).frame(false).min_size(vec2(width, 20.0))).on_hover_text(&item.tooltip).clicked() {
+            *close = true;
+            crate::plugin_ui::run(app, item, json!({}));
+        }
+    }
+}
+
 fn header_menu(app: &mut SheetApp, ui: &mut egui::Ui, was_open: bool) {
     let Some((at, rows)) = app.grid.header_menu else { return };
     let mut close = false;
@@ -2897,6 +2912,13 @@ fn header_menu(app: &mut SheetApp, ui: &mut egui::Ui, was_open: bool) {
                     }
                 }
             }
+            plugin_menu_items(
+                app,
+                ui,
+                &mut close,
+                if rows { gridcraft_engine::plugin::MenuKind::Row } else { gridcraft_engine::plugin::MenuKind::Column },
+                180.0,
+            );
         });
     });
     if close || popup_dismissed(&response.response, was_open) {

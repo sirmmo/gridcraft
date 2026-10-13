@@ -968,3 +968,65 @@ fn trim_references() {
     t.set("K20", "=SUM(Q1:.Q9)");
     assert_eq!(t.get("K20"), Value::Error(CellError::Calc));
 }
+
+/// A plugin-style function: sums its numeric arguments (arrays included) and counts its calls.
+struct ExtSum {
+    calls: std::sync::atomic::AtomicUsize,
+    volatile: bool,
+}
+
+impl crate::external::ExternalFunction for ExtSum {
+    fn call(&self, args: &[Value]) -> Value {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut total = 0.0;
+        for a in args {
+            match a {
+                Value::Array(arr) => total += arr.iter().filter_map(Value::as_f64).sum::<f64>(),
+                v => total += v.as_f64().unwrap_or(0.0),
+            }
+        }
+        Value::number(total)
+    }
+    fn volatile(&self) -> bool {
+        self.volatile
+    }
+    fn max_args(&self) -> usize {
+        3
+    }
+}
+
+#[test]
+fn external_functions_are_called_with_values_and_tracked_as_dependents() {
+    let f = std::sync::Arc::new(ExtSum { calls: Default::default(), volatile: false });
+    crate::external::register("test.extsum", f.clone());
+    let mut t = T::new();
+    t.set("A1", "2");
+    t.set("A2", "3");
+    t.set("B1", "=TEST.EXTSUM(A1:A2, 10)");
+    assert_eq!(t.num("B1"), 15.0);
+    assert!(crate::is_known_function("Test.ExtSum"));
+    // A change to a precedent recalculates it; an unrelated edit doesn't.
+    t.set("A1", "5");
+    assert_eq!(t.num("B1"), 18.0);
+    let calls = f.calls.load(std::sync::atomic::Ordering::Relaxed);
+    t.set("D9", "1");
+    assert_eq!(f.calls.load(std::sync::atomic::Ordering::Relaxed), calls);
+    // Too many arguments, and an unregistered name.
+    t.set("B2", "=TEST.EXTSUM(1,2,3,4)");
+    assert_eq!(t.get("B2"), Value::Error(CellError::Value));
+    assert!(crate::external::unregister("TEST.EXTSUM"));
+    t.set("B3", "=TEST.EXTSUM(1)");
+    assert_eq!(t.get("B3"), Value::Error(CellError::Name));
+}
+
+#[test]
+fn volatile_external_functions_recalculate_on_every_edit() {
+    let f = std::sync::Arc::new(ExtSum { calls: Default::default(), volatile: true });
+    crate::external::register("TEST.EXTVOL", f.clone());
+    let mut t = T::new();
+    t.set("B1", "=TEST.EXTVOL(1)");
+    let calls = f.calls.load(std::sync::atomic::Ordering::Relaxed);
+    t.set("D9", "1");
+    assert!(f.calls.load(std::sync::atomic::Ordering::Relaxed) > calls);
+    crate::external::unregister("TEST.EXTVOL");
+}

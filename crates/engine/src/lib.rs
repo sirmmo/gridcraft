@@ -35,6 +35,7 @@ pub use gridcraft_core as core;
 pub use gridcraft_formula as formula;
 pub use gridcraft_model as model;
 pub use gridcraft_numfmt as numfmt;
+pub use gridcraft_plugin as plugin;
 pub use selection::Selection;
 
 #[derive(Debug, thiserror::Error)]

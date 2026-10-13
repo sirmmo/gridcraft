@@ -268,12 +268,19 @@ fn main() -> eframe::Result<()> {
     let mut control_port: Option<u16> = std::env::var("GRIDCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
     let mut sample: Option<String> = None;
     let mut files: Vec<String> = Vec::new();
+    let mut plugin_dirs: Vec<std::path::PathBuf> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--control" => {
                 i += 1;
                 control_port = args.get(i).and_then(|p| p.parse().ok());
+            }
+            "--plugin" => {
+                i += 1;
+                if let Some(d) = args.get(i) {
+                    plugin_dirs.push(d.into());
+                }
             }
             "--sample" => {
                 i += 1;
@@ -296,6 +303,17 @@ fn main() -> eframe::Result<()> {
                 Err(e) => log::warn!("no log file: {e}"),
             },
             None => logger.no_file(),
+        }
+    }
+    // Plugins: GRIDCRAFT_PLUGIN_PATH, `--plugin DIR`, then `plugins` in the settings folder. Each
+    // process starts when one of its functions or commands is first used.
+    if let Some(dir) = config_dir().filter(|_| prefs_enabled()) {
+        plugin_dirs.push(dir.join("plugins"));
+    }
+    for (dir, r) in gridcraft_engine::plugin::autoload(&plugin_dirs) {
+        match r {
+            Ok(id) => log::info!("plugin {id} from {}", dir.display()),
+            Err(e) => log::warn!("plugin {}: {e}", dir.display()),
         }
     }
     let mut session = Session::new();

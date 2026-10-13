@@ -630,3 +630,59 @@ fn rotated_wrapped_text_is_drawn_rotated_inside_its_cell() {
         assert!(clip.width() < 70.0, "clip spans one 6-character column, got {clip:?}");
     }
 }
+
+/// Plugins are process-wide: the tests that load them run one at a time.
+static PLUGINS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+fn plugins_add_ribbon_tabs_groups_and_menu_items() {
+    let _one_at_a_time = PLUGINS.lock().unwrap_or_else(|e| e.into_inner());
+    let m = gridcraft_engine::plugin::Manifest::parse(
+        r#"{"id": "t.ui-ribbon", "name": "Ribbon Test Plugin", "run": {"command": "./not-started"},
+            "commands": [{"id": "go", "label": "Go Go"}, {"id": "other", "label": "Other Thing"}],
+            "ui": {"ribbon": [{"tab": "Widgets", "group": "Main", "buttons": [{"command": "go", "icon": "chart"}]},
+                              {"tab": "Data", "group": "Extra", "buttons": [{"command": "other", "size": "small", "label": "Data Extra"}]}],
+                   "menus": [{"command": "go", "label": "Plugin Menu Item"}]}}"#,
+    )
+    .unwrap();
+    gridcraft_engine::plugin::install(m, std::env::temp_dir()).unwrap();
+    assert!(gridcraft_ui_egui::plugin_ui::extra_tabs().contains(&"Widgets".to_string()));
+    let mut h = harness(blank());
+    h.state_mut().ui.ribbon_tab = "Widgets".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("Go Go").is_some(), "the plugin's own tab shows its button");
+    h.state_mut().ui.ribbon_tab = "Data".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("Data Extra").is_some(), "a group added to a built-in tab");
+    assert!(h.query_by_label("Go Go").is_none());
+    let items = gridcraft_ui_egui::plugin_ui::menu_items(gridcraft_engine::plugin::MenuKind::Cell);
+    assert!(items.iter().any(|i| i.label == "Plugin Menu Item" && i.plugin == "t.ui-ribbon"));
+    assert_eq!(gridcraft_ui_egui::plugin_ui::icon_named("Chart-Bar"), Some(gridcraft_ui_egui::icons::Icon::ChartBar));
+    gridcraft_engine::plugin::unload("t.ui-ribbon");
+    assert!(!gridcraft_ui_egui::plugin_ui::extra_tabs().contains(&"Widgets".to_string()), "the tab goes with the plugin");
+    h.state_mut().ui.ribbon_tab = "Widgets".into();
+    h.run_steps(2);
+    assert!(h.query_by_label("Go Go").is_none());
+}
+
+#[test]
+fn add_ins_dialog_lists_and_unloads_plugins() {
+    let _one_at_a_time = PLUGINS.lock().unwrap_or_else(|e| e.into_inner());
+    let m = gridcraft_engine::plugin::Manifest::parse(
+        r#"{"id": "t.ui-addins", "name": "Dialog Test Plugin", "version": "1.0", "run": {"command": "./not-started"},
+            "functions": [{"name": "UITEST.F", "signature": "UITEST.F(x)"}],
+            "commands": [{"id": "go", "label": "Do The Thing"}]}"#,
+    )
+    .unwrap();
+    gridcraft_engine::plugin::install(m, std::env::temp_dir()).unwrap();
+    let mut h = harness(blank());
+    h.state_mut().open_dialog("addIns", json!({}));
+    h.run_steps(2);
+    assert!(h.query_by_label("Dialog Test Plugin").is_some());
+    assert!(h.query_by_label("UITEST.F(x)").is_some());
+    assert!(h.query_by_label("Do The Thing").is_some());
+    h.get_by_label("Unload").click();
+    h.run_steps(3);
+    assert!(gridcraft_engine::plugin::get("t.ui-addins").is_none());
+    assert!(h.query_by_label("Dialog Test Plugin").is_none(), "the list refreshes after unloading");
+}

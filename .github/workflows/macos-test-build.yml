@@ -49,10 +49,13 @@ jobs:
           base="$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)"
           sha="$(git rev-parse --short=8 HEAD)"
           slug="$(printf '%s' "$REF" | tr -c 'A-Za-z0-9.\n' '-' | sed 's/-*$//')"
-          echo "version=$base-test.$GITHUB_RUN_NUMBER" >>"$GITHUB_OUTPUT"
-          echo "tag=macos-test-$slug-$GITHUB_RUN_NUMBER" >>"$GITHUB_OUTPUT"
-          echo "sha=$sha" >>"$GITHUB_OUTPUT"
-          echo "targets=$([ "$ARCH" = universal ] && echo aarch64-apple-darwin,x86_64-apple-darwin || echo "$ARCH-apple-darwin")" >>"$GITHUB_OUTPUT"
+          if [ "$ARCH" = universal ]; then targets=aarch64-apple-darwin,x86_64-apple-darwin; else targets="$ARCH-apple-darwin"; fi
+          {
+            echo "version=$base-test.$GITHUB_RUN_NUMBER"
+            echo "tag=macos-test-$slug-$GITHUB_RUN_NUMBER"
+            echo "sha=$sha"
+            echo "targets=$targets"
+          } >>"$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:

@@ -1,0 +1,109 @@
+# Fork-only test build: builds GridCraft for macOS from any branch, tag or commit and publishes it
+# as a GitHub pre-release on this fork. Ad-hoc signed, not notarized (no Apple secrets here): on
+# the Mac, open it with right-click › Open, or run `xattr -dr com.apple.quarantine GridCraft.app`.
+#
+# Run: Actions › "macOS test build" › Run workflow, or
+#   gh workflow run macos-test-build.yml -R sirmmo/gridcraft -f ref=feat/plugin-host
+name: macOS test build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build"
+        type: string
+        default: main
+      arch:
+        description: "aarch64 (Apple silicon), x86_64 (Intel) or universal (both, slower)"
+        type: choice
+        options: [aarch64, universal, x86_64]
+        default: aarch64
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-test-${{ inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Upstream has its own signed release workflow; this one is for the fork.
+    if: github.repository == 'sirmmo/gridcraft'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Version and tag
+        id: meta
+        env:
+          REF: ${{ inputs.ref }}
+          ARCH: ${{ inputs.arch }}
+        run: |
+          base="$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)"
+          sha="$(git rev-parse --short=8 HEAD)"
+          slug="$(printf '%s' "$REF" | tr -c 'A-Za-z0-9.\n' '-' | sed 's/-*$//')"
+          echo "version=$base-test.$GITHUB_RUN_NUMBER" >>"$GITHUB_OUTPUT"
+          echo "tag=macos-test-$slug-$GITHUB_RUN_NUMBER" >>"$GITHUB_OUTPUT"
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "targets=$([ "$ARCH" = universal ] && echo aarch64-apple-darwin,x86_64-apple-darwin || echo "$ARCH-apple-darwin")" >>"$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: stable
+          targets: ${{ steps.meta.outputs.targets }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: macos-test-${{ inputs.arch }}
+
+      - name: Build and package (ad-hoc signed)
+        env:
+          GRIDCRAFT_VERSION: ${{ steps.meta.outputs.version }}
+        run: packaging/macos/package.sh --arch "${{ inputs.arch }}"
+
+      # Branches with the plugin host also ship the example plugin, ready to load with
+      # Automate › Add-ins › Load (or `--plugin`).
+      - name: Example plugin
+        if: hashFiles('crates/plugin/src/bin/example_plugin.rs') != ''
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ARCH: ${{ inputs.arch }}
+          TARGETS: ${{ steps.meta.outputs.targets }}
+        run: |
+          inputs=()
+          for t in ${TARGETS//,/ }; do
+            cargo build --release --locked -p gridcraft-plugin --bin gridcraft-example-plugin --target "$t"
+            inputs+=("target/$t/release/gridcraft-example-plugin")
+          done
+          dir="target/example-plugin/example"
+          mkdir -p "$dir"
+          lipo -create -output "$dir/gridcraft-example-plugin" "${inputs[@]}"
+          codesign --force --sign - "$dir/gridcraft-example-plugin"
+          "$dir/gridcraft-example-plugin" --manifest \
+            | jq '.run.command = "./gridcraft-example-plugin"' >"$dir/plugin.json"
+          (cd target/example-plugin && ditto -c -k --keepParent example "$GITHUB_WORKSPACE/dist/release/gridcraft-example-plugin-$VERSION-macos-$ARCH.zip")
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          REF: ${{ inputs.ref }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          cat >notes.md <<EOF
+          Test build of \`$REF\` ($SHA) for macOS (${{ inputs.arch }}). Not for distribution.
+
+          Ad-hoc signed, not notarized. After copying GridCraft.app to Applications, run
+          \`xattr -dr com.apple.quarantine /Applications/GridCraft.app\` (or right-click › Open).
+          Do the same for \`gridcraft-cli\` and the example plugin folder.
+          EOF
+          gh release create "$TAG" dist/release/* --repo "$GITHUB_REPOSITORY" \
+            --target "$(git rev-parse HEAD)" --prerelease --title "macOS test $VERSION ($REF)" --notes-file notes.md

@@ -66,6 +66,16 @@ jobs:
         with:
           key: macos-test-${{ inputs.arch }}
 
+      # Branches with Office add-ins also build their Office.js library (wasm), which
+      # package.sh puts in the app bundle's Resources.
+      - name: Office.js library
+        if: hashFiles('crates/office-js/Cargo.toml') != ''
+        run: |
+          rustup target add wasm32-unknown-unknown
+          ver="$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[" ]/,"",$0); sub(/version=/,"",$0); print; exit}' Cargo.lock)"
+          cargo install wasm-bindgen-cli --version "$ver" --locked
+          cargo xtask office-js
+
       - name: Build and package (ad-hoc signed)
         env:
           GRIDCRAFT_VERSION: ${{ steps.meta.outputs.version }}

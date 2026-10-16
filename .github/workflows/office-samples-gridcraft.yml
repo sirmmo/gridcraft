@@ -1,0 +1,194 @@
+# Fork-only real-world Office.js test: GridCraft's desktop app, in its real task-pane web view
+# (WKWebView on macOS, WebView2 on Windows), loads Microsoft's official Office add-in samples from
+# the pages Microsoft hosts (https://officedev.github.io/Office-Add-in-samples/...) and
+# `cargo xtask office-samples` drives them through the control channel (docs/officejs.md,
+# "Testing with Microsoft's samples"). The samples are cloned here at a pinned commit and never
+# committed to GridCraft.
+#
+# Run: Actions > "Office add-in samples (macOS and Windows)" > Run workflow, or
+#   gh workflow run office-samples-gridcraft.yml -R sirmmo/gridcraft -f ref=feat/office-samples-test
+#
+# Results: the job summary has the table; the artifact `office-samples-<os>` has results.json,
+# summary.md, the screenshots and the app's logs.
+#
+# GUI on the runners: macOS runners are logged in to a desktop session, and GitHub-hosted Windows
+# runners run jobs in an interactive (auto-logon) session, so the app's window and its web view are
+# real on both. Neither has a GPU: Windows renders with Direct3D 12's WARP (or OpenGL), macOS with
+# its software Metal device. The window is 1440x900; the Windows desktop is smaller (1024x768),
+# which only clips what a person would see: screenshots are of the app's own frame.
+name: Office add-in samples (macOS and Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit of GridCraft to test"
+        type: string
+        default: feat/office-samples-test
+      samples_commit:
+        description: "OfficeDev/Office-Add-in-samples commit (pinned; the hosted pages are always the live ones)"
+        type: string
+        default: 2fb9262ce3802c8497d3b148a9bed7129a675da7
+      platforms:
+        description: "Which platforms to run on"
+        type: choice
+        options: [both, macos, windows]
+        default: both
+      only:
+        description: "Scenario ids, comma-separated (empty: all; see `cargo xtask office-samples --list`)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: office-samples-${{ inputs.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  SAMPLES_URL: https://github.com/OfficeDev/Office-Add-in-samples
+  # Only the samples the scenarios use (sparse, blobs fetched on demand).
+  SAMPLES_PATHS: >-
+    Samples/hello-world/excel-hello-world
+    Samples/office-add-in-commands/excel
+    Samples/office-add-in-save-custom-settings
+    Samples/office-keyboard-shortcuts
+    Samples/tutorials/first-run-experience-tutorial
+    Excel-custom-functions
+
+jobs:
+  macos:
+    if: github.repository == 'sirmmo/gridcraft' && inputs.platforms != 'windows'
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: office-samples-macos
+
+      - name: Office.js library
+        run: |
+          ver="$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[" ]/,"",$0); sub(/version=/,"",$0); print; exit}' Cargo.lock)"
+          cargo install wasm-bindgen-cli --version "$ver" --locked
+          cargo xtask office-js
+
+      - name: Build the app
+        run: cargo build --release --locked -p gridcraft
+
+      - name: Microsoft's samples (pinned commit)
+        env:
+          COMMIT: ${{ inputs.samples_commit }}
+        run: |
+          git init -q samples
+          git -C samples remote add origin "$SAMPLES_URL"
+          git -C samples sparse-checkout set $SAMPLES_PATHS
+          git -C samples fetch -q --depth 1 --filter=blob:none origin "$COMMIT"
+          git -C samples checkout -q FETCH_HEAD
+          git -C samples log -1 --format='%H %cs %s'
+
+      - name: Run the samples
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          args=(--app target/release/gridcraft --office-js target/office-js --samples samples --out office-samples-out)
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          cargo xtask office-samples "${args[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f office-samples-out/summary.md ]; then cat office-samples-out/summary.md >>"$GITHUB_STEP_SUMMARY"; else echo "No summary: the driver didn't run (see the log)." >>"$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: office-samples-macos
+          path: |
+            office-samples-out
+            !office-samples-out/profiles
+          if-no-files-found: warn
+
+  windows:
+    if: github.repository == 'sirmmo/gridcraft' && inputs.platforms != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc,wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: office-samples-windows
+
+      - name: Office.js library
+        run: |
+          ver="$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[" ]/,"",$0); sub(/version=/,"",$0); print; exit}' Cargo.lock)"
+          cargo install wasm-bindgen-cli --version "$ver" --locked
+          cargo xtask office-js
+
+      - name: Build the app
+        run: cargo build --release --locked -p gridcraft
+
+      # WebView2 ships with Windows Server 2022/2025 (Edge); say which runtime the pane gets.
+      - name: WebView2 runtime
+        shell: pwsh
+        run: |
+          $keys = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+                  'HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $v = $keys | ForEach-Object { (Get-ItemProperty $_ -ErrorAction SilentlyContinue).pv } | Select-Object -First 1
+          if ($v) { "WebView2 runtime $v" } else { "::warning::No WebView2 runtime found; the task panes can't open" }
+
+      - name: Microsoft's samples (pinned commit)
+        env:
+          COMMIT: ${{ inputs.samples_commit }}
+        run: |
+          git init -q samples
+          git -C samples config core.longpaths true
+          git -C samples remote add origin "$SAMPLES_URL"
+          git -C samples sparse-checkout set $SAMPLES_PATHS
+          git -C samples fetch -q --depth 1 --filter=blob:none origin "$COMMIT"
+          git -C samples checkout -q FETCH_HEAD
+          git -C samples log -1 --format='%H %cs %s'
+
+      - name: Run the samples
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          args=(--app target/release/gridcraft.exe --office-js target/office-js --samples samples --out office-samples-out)
+          if [ -n "$ONLY" ]; then args+=(--only "$ONLY"); fi
+          cargo xtask office-samples "${args[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f office-samples-out/summary.md ]; then cat office-samples-out/summary.md >>"$GITHUB_STEP_SUMMARY"; else echo "No summary: the driver didn't run (see the log)." >>"$GITHUB_STEP_SUMMARY"; fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: office-samples-windows
+          path: |
+            office-samples-out
+            !office-samples-out/profiles
+          if-no-files-found: warn
